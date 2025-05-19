@@ -41,7 +41,7 @@
 
     - name: Add user to docker group
       user:
-        name: "{{ ansible_user }}"
+        name: "{{ ansible_env.USER }}"
         groups: docker
         append: yes
 
@@ -55,6 +55,11 @@
       copy:
         src: "{{ script_source }}"
         dest: "{{ script_dest }}"
+
+    - name: Remove existing container if it exists
+      command: "docker rm -f {{ container_name }}"
+      ignore_errors: true
+      become: true
 
     - name: Build Docker image
       command: "docker build -t {{ image_name }} ."
@@ -77,7 +82,7 @@
 
     - name: Show container logs
       debug:
-        msg: "{{ container_logs.stdout }}"
+        var: container_logs.stderr_lines
 
     - name: Get container exit code
       command: "docker inspect {{ container_name }} --format='{{'{{'}}.State.ExitCode{{'}}'}}'"
@@ -87,14 +92,3 @@
       fail:
         msg: "Script failed with exit code {{ exit_code.stdout }}"
       when: exit_code.stdout != "0"
-
-    - name: Remove container
-      command: "docker rm {{ container_name }}"
-      ignore_errors: yes
-      become: true
-
-    - name: Clean up script copy
-      file:
-        path: "{{ script_dest }}"
-        state: absent
-      become: true
