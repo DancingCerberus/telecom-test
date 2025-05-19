@@ -11,5 +11,6 @@
 `docker logs myhttp`
 
 ### Section 3
+`cd section_3`
 
 `ansible-playbook -i inventory.ini playbook.yml -K`
