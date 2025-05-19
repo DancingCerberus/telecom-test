@@ -1,0 +1,100 @@
+---
+- name: Docker Automation for HTTP Script
+  hosts: localhost
+  become: true
+  vars:
+    container_name: http-checker
+    image_name: http-checker-image
+    dockerfile_dir: ../section_2
+    script_source: ../section_1/main.py
+    script_dest: "{{ dockerfile_dir }}/main.py"
+
+  tasks:
+    - name: Install Docker dependencies
+      apt:
+        name:
+          - ca-certificates
+          - curl
+          - gnupg
+          - lsb-release
+        state: present
+        update_cache: yes
+
+    - name: Add Docker GPG key
+      apt_key:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        state: present
+
+    - name: Add Docker repository
+      apt_repository:
+        repo: deb [arch=amd64] https://download.docker.com/linux/ubuntu jammy stable
+        state: present
+
+    - name: Install Docker
+      apt:
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+        state: latest
+        update_cache: yes
+
+    - name: Add user to docker group
+      user:
+        name: "{{ ansible_user }}"
+        groups: docker
+        append: yes
+
+    - name: Start and enable Docker service
+      systemd:
+        name: docker
+        enabled: yes
+        state: started
+
+    - name: Copy Python script into build context
+      copy:
+        src: "{{ script_source }}"
+        dest: "{{ script_dest }}"
+
+    - name: Build Docker image
+      command: "docker build -t {{ image_name }} ."
+      args:
+        chdir: "{{ dockerfile_dir }}"
+      register: build_result
+      become: true
+
+    - name: Run container
+      command: "docker run -d --name {{ container_name }} {{ image_name }}"
+      become: true
+
+    - name: Wait for container to finish
+      shell: |
+        while docker ps -q -f name={{ container_name }} | grep .; do sleep 1; done
+
+    - name: Get container logs
+      command: "docker logs {{ container_name }}"
+      register: container_logs
+
+    - name: Show container logs
+      debug:
+        msg: "{{ container_logs.stdout }}"
+
+    - name: Get container exit code
+      command: "docker inspect {{ container_name }} --format='{{'{{'}}.State.ExitCode{{'}}'}}'"
+      register: exit_code
+
+    - name: Fail if exit code not 0
+      fail:
+        msg: "Script failed with exit code {{ exit_code.stdout }}"
+      when: exit_code.stdout != "0"
+
+    - name: Remove container
+      command: "docker rm {{ container_name }}"
+      ignore_errors: yes
+      become: true
+
+    - name: Clean up script copy
+      file:
+        path: "{{ script_dest }}"
+        state: absent
+      become: true
